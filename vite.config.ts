@@ -20,20 +20,6 @@ export default defineConfig(({ command }) => {
       build: {
         sourcemap: false,
         outDir: `./dist`,
-        rollupOptions: {
-          output: [
-            {
-              format: "es",
-              entryFileNames: `CHVisualiser.js`,
-              preserveModules: false
-            },
-          ],
-        },
-        lib: {
-          entry: "./src/components/XMCVisualiser/index.tsx",
-          name: "XMCVisualiser",
-          fileName: "XMCVisualiser",
-        },
         emptyOutDir: true,
       },
     };
