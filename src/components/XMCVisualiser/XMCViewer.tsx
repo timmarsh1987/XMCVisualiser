@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Search, RefreshCw, Eye, Code2, FileText, ChevronRight, Globe, Database, Layout, Component } from 'lucide-react';
-import { useMarketplaceClient } from '../../utils/hooks/useMarketplaceClient';
+import { useMarketplaceClientContext } from '../../app/providers/MarketplaceClientProvider';
 import type { ApplicationContext } from '@sitecore-marketplace-sdk/client';
 
 // Types for Sitecore XM Cloud entities based on actual API structures
@@ -644,15 +644,16 @@ const XMCViewer: React.FC<{
   const [isConfigured, setIsConfigured] = useState(false);
   
   // Initialize Marketplace client
-  const { client: marketplaceClient, error: clientError, isInitialized } = useMarketplaceClient();
+  const { client: marketplaceClient, appContextError: clientError, isInitialized } = useMarketplaceClientContext();
   const [appContext, setAppContext] = useState<ApplicationContext>();
   
   // Helper function to extract tenant identifier from URL or context
-  const extractTenantIdentifier = (): { tenantId?: string; tenantName?: string; organizationId?: string } | null => {
+  const extractTenantIdentifier = (): { tenantId?: string; tenantName?: string; organizationId?: string; isDevelopment?: boolean } | null => {
     try {
-      console.log('Current URL:', window.location.href);
-      console.log('Search params:', window.location.search);
-      console.log('URL pathname:', window.location.pathname);
+      console.log('🔍 extractTenantIdentifier called');
+      console.log('📍 Current URL:', window.location.href);
+      console.log('🔍 Search params:', window.location.search);
+      console.log('📁 URL pathname:', window.location.pathname);
       
       // First check query parameters
       const urlParams = new URLSearchParams(window.location.search);
@@ -660,21 +661,25 @@ const XMCViewer: React.FC<{
       const tenantId = urlParams.get('tenantId');
       const organizationId = urlParams.get('organization');
       
-      console.log('URL params found:', { tenantName, tenantId, organizationId });
+      console.log('📊 URL params found:', { tenantName, tenantId, organizationId });
+      console.log('🔗 URLSearchParams entries:');
+      for (const [key, value] of urlParams.entries()) {
+        console.log(`   ${key}: ${value}`);
+      }
       
       // Return the first available identifier
       if (tenantId) {
-        console.log('Using tenant ID from URL params:', tenantId);
+        console.log('✅ Using tenant ID from URL params:', tenantId);
         return { tenantId };
       }
       
       if (tenantName) {
-        console.log('Using tenant name from URL params:', tenantName);
+        console.log('✅ Using tenant name from URL params:', tenantName);
         return { tenantName };
       }
       
       if (organizationId) {
-        console.log('Using organization ID from URL params:', organizationId);
+        console.log('✅ Using organization ID from URL params:', organizationId);
         return { organizationId };
       }
       
@@ -697,15 +702,20 @@ const XMCViewer: React.FC<{
         }
       }
       
-      // For development/testing, use a default tenant ID if available
+      // Check if we're in development mode (localhost) and provide a development fallback
       if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        // Use the actual tenant ID from your XM Cloud environment
-        const defaultTenantId = 'd8446fbd-883a-4bee-5488-08dbec10aa78';
-        console.log('Using default tenant ID for development:', defaultTenantId);
-        return { tenantId: defaultTenantId };
+        console.log('🖥️ Development mode detected - using development tenant configuration');
+        console.log('💡 For production, ensure the app runs in XM Cloud with proper URL parameters');
+        
+        // Return a development tenant identifier
+        return { 
+          tenantName: 'epam1d76b-learningxmcceb0-mihalydemo3e9b',
+          isDevelopment: false 
+        };
       }
       
-      console.log('No tenant identifier found in URL or path');
+      console.log('❌ No tenant identifier found in URL or path');
+      console.log('💡 Ensure the app is running in XM Cloud with proper URL parameters');
       return null;
     } catch (error) {
       console.warn('Could not parse URL parameters:', error);
@@ -715,21 +725,44 @@ const XMCViewer: React.FC<{
 
   // Auto-configure if tenant identifier is available in URL
   useEffect(() => {
-    console.log('Auto-configuration useEffect running...');
+    console.log('🚀 Auto-configuration useEffect running...');
+    console.log('📍 Current URL:', window.location.href);
+    console.log('🔍 Search params:', window.location.search);
+    
     const tenantInfo = extractTenantIdentifier();
-    console.log('Extracted tenant info:', tenantInfo);
+    console.log('📊 Extracted tenant info:', tenantInfo);
     
     if (tenantInfo) {
       const identifier = tenantInfo.tenantId || tenantInfo.tenantName || tenantInfo.organizationId;
       if (identifier) {
-        console.log('Auto-configuring with identifier:', identifier);
-        setCredentials(prev => ({ ...prev, siteName: identifier as string }));
-        setIsConfigured(true);
-        setShowConfig(false); // Always hide config panel when tenant identifier is found
-        console.log('Auto-configuration completed');
+        console.log('✅ Auto-configuring with identifier:', identifier);
+        
+        // Handle development mode specially
+        if (tenantInfo.isDevelopment) {
+          console.log('🖥️ Development mode - using development configuration');
+          setCredentials(prev => ({ ...prev, siteName: 'development-mode' }));
+          setIsConfigured(true);
+          setShowConfig(false);
+          console.log('🎉 Development auto-configuration completed!');
+          console.log('🔧 Credentials updated:', { siteName: 'development-mode' });
+          console.log('⚙️ isConfigured set to:', true);
+          console.log('💡 This is a development fallback - production will use live XM Cloud data');
+        } else {
+          console.log('🚀 Production mode - using live XM Cloud configuration');
+          setCredentials(prev => ({ ...prev, siteName: identifier as string }));
+          setIsConfigured(true);
+          setShowConfig(false);
+          console.log('🎉 Production auto-configuration completed successfully!');
+          console.log('🔧 Credentials updated:', { siteName: identifier });
+          console.log('⚙️ isConfigured set to:', true);
+        }
       }
     } else {
-      console.log('No tenant identifier found in URL');
+      console.log('❌ No tenant identifier found in URL');
+      console.log('📝 URL analysis:');
+      console.log('   - Pathname:', window.location.pathname);
+      console.log('   - Search:', window.location.search);
+      console.log('   - Hash:', window.location.hash);
       // Don't show config panel - just stay in unconfigured state
       setShowConfig(false);
     }
@@ -1065,7 +1098,7 @@ const XMCViewer: React.FC<{
             {clientError && (
               <div className="flex items-center gap-2 px-3 py-2 bg-red-100 text-red-800 rounded-md text-sm">
                 <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                SDK Error: {clientError.message}
+                SDK Error: {clientError}
               </div>
             )}
           <button

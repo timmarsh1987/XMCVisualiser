@@ -6,26 +6,20 @@ import {
   Box,
   VStack,
   HStack,
-  Text,
-  Button,
-  Card,
-  CardHeader,
-  CardBody,
-  Badge,
   Flex,
   useToast,
   Skeleton,
   Icon,
 } from "@chakra-ui/react";
+import { BlokText, BlokButton, BlokCard, BlokBadge, BlokLayout, BlokAlert } from "../blok";
 // ItemDiffTool - main component for comparing authoring vs published layouts
-import { usePageContext } from "../utils/hooks/usePageContext";
-import {
-  LayoutComparisonService,
-  ComparisonResult,
-} from "../services/LayoutComparisonService";
+import { usePageContext } from "../../utils/hooks/reference/usePageContext";
+import { LayoutComparisonService } from "../../services/reference/LayoutComparisonService";
+import { ComparisonResult } from "../../services/reference/types";
 import { DiffViewer } from "./DiffViewer";
 import { LoadingSpinner } from "./LoadingSpinner";
 import { ErrorDisplay } from "./ErrorDisplay";
+import { useTenantContext } from "../../providers/TenantContext";
 import { mdiMagnify } from "@mdi/js";
 import { mdiRefresh } from "@mdi/js";
 
@@ -39,6 +33,7 @@ export function ItemDiffTool({ client }: ItemDiffToolProps) {
     isLoading: isPageLoading,
     error: pageError,
   } = usePageContext(client);
+  const { selectedTenant } = useTenantContext();
   const [comparisonService, setComparisonService] =
     useState<LayoutComparisonService | null>(null);
   const [comparisonResult, setComparisonResult] =
@@ -53,6 +48,15 @@ export function ItemDiffTool({ client }: ItemDiffToolProps) {
       try {
         setIsInitializing(true);
         const service = new LayoutComparisonService(client);
+        
+        // Set tenant context IDs if available
+        if (selectedTenant) {
+          service.setTenantContextIds({
+            preview: selectedTenant.context.preview,
+            live: selectedTenant.context.live,
+          });
+        }
+        
         await service.initialize();
         setComparisonService(service);
       } catch (error) {
@@ -65,23 +69,6 @@ export function ItemDiffTool({ client }: ItemDiffToolProps) {
           status: "error",
           duration: 5000,
           isClosable: true,
-          render: ({ title, description }) => (
-            <Box
-              p={4}
-              bg="red.50"
-              border="1px solid"
-              borderColor="red.200"
-              borderRadius="md"
-              shadow="sm"
-            >
-              <Text variant="strong" color="red.800">
-                {title}
-              </Text>
-              <Text variant="default" mt={1} color="red.700">
-                {description}
-              </Text>
-            </Box>
-          ),
         });
       } finally {
         setIsInitializing(false);
@@ -89,11 +76,36 @@ export function ItemDiffTool({ client }: ItemDiffToolProps) {
     };
 
     initializeService();
-  }, [client, toast]);
+  }, [client, selectedTenant, toast]);
+
+  // Reinitialize service when tenant changes
+  useEffect(() => {
+    if (comparisonService && selectedTenant) {
+      comparisonService.setTenantContextIds({
+        preview: selectedTenant.context.preview,
+        live: selectedTenant.context.live,
+      });
+      
+      // Reinitialize to use new context IDs
+      comparisonService.initialize().catch(console.error);
+    }
+  }, [selectedTenant, comparisonService]);
 
   // Perform comparison when page context changes
   const performComparison = useCallback(async () => {
     if (!comparisonService || !pageContext?.itemId) {
+      return;
+    }
+
+    // Check if tenant is selected
+    if (!selectedTenant) {
+      toast({
+        title: "No Tenant Selected",
+        description: "Please select a tenant before comparing layouts",
+        status: "warning",
+        duration: 3000,
+        isClosable: true,
+      });
       return;
     }
 
@@ -114,30 +126,19 @@ export function ItemDiffTool({ client }: ItemDiffToolProps) {
       const hasPublishedData = !result.published.error;
 
       if (hasPreviewData && hasPublishedData) {
-        console.log("Comparison Complete");
+        toast({
+          title: "Comparison Complete",
+          description: `Successfully compared layouts for tenant: ${selectedTenant.tenantDisplayName}`,
+          status: "success",
+          duration: 3000,
+          isClosable: true,
+        });
       } else if (hasPreviewData || hasPublishedData) {
         toast({
           title: "Partial Data Retrieved",
           description: "Only one version could be fetched",
           status: "warning",
           duration: 3000,
-          render: ({ title, description }) => (
-            <Box
-              p={4}
-              bg="orange.50"
-              border="1px solid"
-              borderColor="orange.200"
-              borderRadius="md"
-              shadow="sm"
-            >
-              <Text variant="strong" color="orange.800">
-                {title}
-              </Text>
-              <Text variant="default" mt={1} color="orange.700">
-                {description}
-              </Text>
-            </Box>
-          ),
         });
       } else {
         toast({
@@ -145,23 +146,6 @@ export function ItemDiffTool({ client }: ItemDiffToolProps) {
           description: "Could not fetch either version",
           status: "error",
           duration: 4000,
-          render: ({ title, description }) => (
-            <Box
-              p={4}
-              bg="red.50"
-              border="1px solid"
-              borderColor="red.200"
-              borderRadius="md"
-              shadow="sm"
-            >
-              <Text variant="strong" color="red.800">
-                {title}
-              </Text>
-              <Text variant="default" mt={1} color="red.700">
-                {description}
-              </Text>
-            </Box>
-          ),
         });
       }
     } catch (error) {
@@ -173,28 +157,11 @@ export function ItemDiffTool({ client }: ItemDiffToolProps) {
             : "An unexpected error occurred",
         status: "error",
         duration: 5000,
-        render: ({ title, description }) => (
-          <Box
-            p={4}
-            bg="red.50"
-            border="1px solid"
-            borderColor="red.200"
-            borderRadius="md"
-            shadow="sm"
-          >
-            <Text variant="strong" color="red.800">
-              {title}
-            </Text>
-            <Text variant="default" mt={1} color="red.700">
-              {description}
-            </Text>
-          </Box>
-        ),
       });
     } finally {
       setIsComparing(false);
     }
-  }, [comparisonService, pageContext, toast]);
+  }, [comparisonService, pageContext, selectedTenant, toast]);
 
   // Auto-compare when page context changes (with safety checks)
   useEffect(() => {
@@ -229,24 +196,37 @@ export function ItemDiffTool({ client }: ItemDiffToolProps) {
     );
   }
 
+  // Show no tenant selected state
+  if (!selectedTenant) {
+    return (
+      <BlokLayout.Container textAlign="center">
+        <VStack spacing={4}>
+          <BlokText.Large>No Tenant Selected</BlokText.Large>
+          <BlokText.Subtle>
+            Please select a tenant from the Tenant Management section above to compare layouts.
+          </BlokText.Subtle>
+        </VStack>
+      </BlokLayout.Container>
+    );
+  }
+
   // Show no item selected state
   if (!pageContext?.itemId) {
     return (
-      <Box p={6} textAlign="center">
+      <BlokLayout.Container textAlign="center">
         <VStack spacing={4}>
-          <Text variant="large">No Item Selected</Text>
-          <Text variant="subtle">
+          <BlokText.Large>No Item Selected</BlokText.Large>
+          <BlokText.Subtle>
             Select an item in the page builder to compare its preview and
             published versions.
-          </Text>
+          </BlokText.Subtle>
         </VStack>
-      </Box>
+      </BlokLayout.Container>
     );
   }
 
   return (
-    <Box
-      p={6}
+    <BlokLayout.Container
       maxW="100%"
       h="100vh"
       overflow="auto"
@@ -255,19 +235,24 @@ export function ItemDiffTool({ client }: ItemDiffToolProps) {
     >
       <VStack spacing={6} align="stretch" h="100%">
         {/* Header */}
-        <Card shadow="sm" border="1px solid" borderColor="gray.200">
-          <CardHeader pb={3}>
+        <BlokCard.Default>
+          <BlokCard.Header pb={3}>
             <VStack spacing={4} align="stretch">
               <Flex justify="space-between" align="center">
                 <VStack align="start" spacing={1}>
-                  <Text variant="subtle">
+                  <BlokText.Subtle>
                     Compare layout differences between preview and published
                     versions
-                  </Text>
+                  </BlokText.Subtle>
+                  <HStack spacing={2} mt={1}>
+                    <BlokText.Small>Tenant:</BlokText.Small>
+                    <BlokBadge.Info>{selectedTenant.tenantDisplayName}</BlokBadge.Info>
+                    <BlokText.Small>•</BlokText.Small>
+                    <BlokText.Small>Resource: {selectedTenant.resourceId}</BlokText.Small>
+                  </HStack>
                 </VStack>
 
-                <Button
-                  variant="solid"
+                <BlokButton.Primary
                   isLoading={isComparing}
                   loadingText="Comparing..."
                   onClick={performComparison}
@@ -278,7 +263,7 @@ export function ItemDiffTool({ client }: ItemDiffToolProps) {
                   }
                 >
                   Refresh
-                </Button>
+                </BlokButton.Primary>
               </Flex>
 
               {/* Item Info & Comparison Status */}
@@ -293,56 +278,52 @@ export function ItemDiffTool({ client }: ItemDiffToolProps) {
                   <VStack align="start" spacing={4}>
                     {/* Item Details */}
                     <HStack spacing={3}>
-                      <Text variant="strong">
+                      <BlokText.Strong>
                         {comparisonResult.itemInfo.displayName ||
                           comparisonResult.itemInfo.name}
-                      </Text>
-                      <Badge colorScheme="blue" size="sm">
+                      </BlokText.Strong>
+                      <BlokBadge.Info>
                         {pageContext.language?.toUpperCase() || "EN"}
-                      </Badge>
+                      </BlokBadge.Info>
                     </HStack>
-                    <Text variant="small" fontFamily="mono">
+                    <BlokText.Mono>
                       <strong>Path:</strong> {comparisonResult.itemInfo.path}
-                    </Text>
+                    </BlokText.Mono>
 
                     {/* Comparison Status */}
                     <Box pt={2}>
-                      <Text variant="strong" mb={3}>
+                      <BlokText.Strong mb={3}>
                         Comparison Status
-                      </Text>
+                      </BlokText.Strong>
                       <HStack spacing={6}>
                         <HStack spacing={3}>
                           <VStack align="start" spacing={0}>
-                            <Text variant="default">Preview Version</Text>
-                            <Badge
-                              colorScheme={
-                                comparisonResult.preview.error ? "red" : "green"
+                            <BlokText.Default>Preview Version</BlokText.Default>
+                            <BlokBadge.Status
+                              status={
+                                comparisonResult.preview.error ? "error" : "success"
                               }
-                              variant="subtle"
-                              size="sm"
                             >
                               {comparisonResult.preview.error
                                 ? "Failed"
                                 : "Loaded"}
-                            </Badge>
+                            </BlokBadge.Status>
                           </VStack>
                         </HStack>
                         <HStack spacing={3}>
                           <VStack align="start" spacing={0}>
-                            <Text variant="default">Published Version</Text>
-                            <Badge
-                              colorScheme={
+                            <BlokText.Default>Published Version</BlokText.Default>
+                            <BlokBadge.Status
+                              status={
                                 comparisonResult.published.error
-                                  ? "red"
-                                  : "green"
+                                  ? "error"
+                                  : "success"
                               }
-                              variant="subtle"
-                              size="sm"
                             >
                               {comparisonResult.published.error
                                 ? "Failed"
                                 : "Loaded"}
-                            </Badge>
+                            </BlokBadge.Status>
                           </VStack>
                         </HStack>
                       </HStack>
@@ -351,13 +332,13 @@ export function ItemDiffTool({ client }: ItemDiffToolProps) {
                 </Box>
               )}
             </VStack>
-          </CardHeader>
-        </Card>
+          </BlokCard.Header>
+        </BlokCard.Default>
 
         {/* Loading State */}
         {isComparing && (
-          <Card flex="1">
-            <CardBody>
+          <BlokCard.Default flex="1">
+            <BlokCard.Body>
               <VStack spacing={4}>
                 <Skeleton height="20px" />
                 <Skeleton height="16px" />
@@ -369,14 +350,14 @@ export function ItemDiffTool({ client }: ItemDiffToolProps) {
                 <Skeleton height="16px" />
                 <Skeleton height="16px" />
               </VStack>
-            </CardBody>
-          </Card>
+            </BlokCard.Body>
+          </BlokCard.Default>
         )}
 
         {/* Diff Viewer */}
         {!isComparing && comparisonResult && (
-          <Card shadow="md" border="1px solid" borderColor="gray.200" h="auto">
-            <CardHeader
+          <BlokCard.Elevated h="auto">
+            <BlokCard.Header
               pb={3}
               bg="gray.50"
               borderBottomWidth="1px"
@@ -385,18 +366,18 @@ export function ItemDiffTool({ client }: ItemDiffToolProps) {
               <VStack spacing={3} align="stretch">
                 <HStack spacing={4} justify="space-between">
                   <VStack align="start" spacing={0}>
-                    <Text variant="strong">
+                    <BlokText.Strong>
                       <Icon>
                         <path d={mdiMagnify} />
                       </Icon>
                       Layout Differences
-                    </Text>
-                    <Text variant="small">Side-by-side comparison view</Text>
+                    </BlokText.Strong>
+                    <BlokText.Small>Side-by-side comparison view</BlokText.Small>
                   </VStack>
                 </HStack>
               </VStack>
-            </CardHeader>
-            <CardBody pt={0} pb={4}>
+            </BlokCard.Header>
+            <BlokCard.Body pt={0} pb={4}>
               {comparisonResult.preview.rendered &&
               comparisonResult.published.rendered ? (
                 <DiffViewer
@@ -422,10 +403,10 @@ export function ItemDiffTool({ client }: ItemDiffToolProps) {
                   )}
                 </VStack>
               )}
-            </CardBody>
-          </Card>
+            </BlokCard.Body>
+          </BlokCard.Elevated>
         )}
       </VStack>
-    </Box>
+    </BlokLayout.Container>
   );
 }

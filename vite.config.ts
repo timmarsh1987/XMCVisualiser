@@ -30,9 +30,9 @@ export default defineConfig(({ command }) => {
           ],
         },
         lib: {
-          entry: "./src/components/CHVisualiser/index.tsx",
-          name: "CHVisualiser",
-          fileName: "CHVisualiser",
+          entry: "./src/components/XMCVisualiser/index.tsx",
+          name: "XMCVisualiser",
+          fileName: "XMCVisualiser",
         },
         emptyOutDir: true,
       },

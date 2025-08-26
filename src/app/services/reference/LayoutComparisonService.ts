@@ -1,67 +1,30 @@
 // LayoutComparisonService coordinates fetching from both preview and published environments
 import { ClientSDK } from "@sitecore-marketplace-sdk/client";
-import { PreviewService, LayoutData } from "./PreviewService";
+import { PreviewService } from "./PreviewService";
 import { ExperienceEdgeService } from "./ExperienceEdgeService";
-
-export interface ComparisonResult {
-  preview: LayoutData;
-  published: LayoutData;
-  itemInfo?: {
-    name: string;
-    displayName?: string;
-    path: string;
-  };
-}
-
-export interface ApplicationContext {
-  id: string;
-  name: string;
-  resourceAccess: Array<{
-    resourceId: string;
-    tenantId: string;
-    tenantName: string;
-    context: {
-      live: string;
-      preview: string;
-    };
-  }>;
-}
+import { LayoutData, ComparisonResult, ApplicationContext, GraphQLResponse } from "./types";
 
 export class LayoutComparisonService {
   private previewService: PreviewService;
   private experienceEdgeService: ExperienceEdgeService | null = null;
   private applicationContext: ApplicationContext | null = null;
+  private selectedTenantContextIds: { preview: string; live: string } | null = null;
 
   constructor(private client: ClientSDK) {
     this.previewService = new PreviewService(client);
   }
 
   /**
-   * Normalize layout JSON to ensure consistent structure for comparison
-   * Extracts only the sitecore.route object for focused comparison
+   * Set the selected tenant context IDs for API calls
    */
-  private normalizeLayoutJson(input: string | any): string {
-    try {
-      let parsed;
-      
-      // Handle both string and object inputs
-      if (typeof input === 'string') {
-        parsed = JSON.parse(input);
-      } else if (typeof input === 'object' && input !== null) {
-        parsed = input;
-      } else {
-        return String(input);
-      }
-      
-      // Extract only the sitecore.route object for comparison
-      if (parsed.sitecore?.route) {
-        return JSON.stringify(parsed.sitecore.route, null, 2);
-      }
-      
-      // Fallback: if no sitecore.route found, return the whole object
-      return JSON.stringify(parsed, null, 2);
-    } catch (error) {
-      return typeof input === 'string' ? input : JSON.stringify(input, null, 2);
+  setTenantContextIds(contextIds: { preview: string; live: string } | null) {
+    this.selectedTenantContextIds = contextIds;
+    
+    // Reinitialize Experience Edge service if we have new context IDs
+    if (contextIds?.live) {
+      this.experienceEdgeService = new ExperienceEdgeService(this.client, contextIds.live);
+    } else {
+      this.experienceEdgeService = null;
     }
   }
 
@@ -72,15 +35,24 @@ export class LayoutComparisonService {
     try {
       // Get application context to extract live context ID
       const { data } = await this.client.query("application.context");
-      this.applicationContext = data;
+      const response = data as GraphQLResponse<ApplicationContext>;
+      this.applicationContext = response?.data || null;
 
-      // Extract the live context ID for reference
-      const liveContextId = this.getLiveContextId();
-      if (liveContextId) {
-        this.experienceEdgeService = new ExperienceEdgeService(this.client, liveContextId);
+      // If we have tenant context IDs, use them; otherwise fall back to first resource
+      if (this.selectedTenantContextIds?.live) {
+        this.experienceEdgeService = new ExperienceEdgeService(this.client, this.selectedTenantContextIds.live);
         
         // Test the connection
         await this.experienceEdgeService.testConnection();
+      } else {
+        // Fallback to first resource access (legacy behavior)
+        const liveContextId = this.getLiveContextId();
+        if (liveContextId) {
+          this.experienceEdgeService = new ExperienceEdgeService(this.client, liveContextId);
+          
+          // Test the connection
+          await this.experienceEdgeService.testConnection();
+        }
       }
     } catch (error) {
       throw error;
@@ -101,15 +73,15 @@ export class LayoutComparisonService {
     };
 
     try {
-      // Get context IDs for API calls
-      const liveContextId = this.getLiveContextId();
-      const previewContextId = this.getPreviewContextId();
+      // Get context IDs for API calls - prioritize selected tenant over fallback
+      const liveContextId = this.selectedTenantContextIds?.live || this.getLiveContextId();
+      const previewContextId = this.selectedTenantContextIds?.preview || this.getPreviewContextId();
 
       // Fetch both versions in parallel
       const [previewLayout, publishedLayout, itemInfo] = await Promise.allSettled([
-        this.previewService.getPreviewLayout(siteName, routePath, language, previewContextId || liveContextId),
+        this.previewService.getPreviewLayout(siteName, routePath, language, previewContextId || liveContextId || undefined),
         this.getPublishedLayout(siteName, routePath, language),
-        this.previewService.getItemInfo(siteName, routePath, language, previewContextId || liveContextId),
+        this.previewService.getItemInfo(siteName, routePath, language, previewContextId || liveContextId || undefined),
       ]);
 
       // Handle preview layout result
@@ -139,9 +111,9 @@ export class LayoutComparisonService {
       // Handle item info result
       if (itemInfo.status === "fulfilled" && itemInfo.value) {
         result.itemInfo = {
-          name: itemInfo.value.name,
+          name: itemInfo.value.name || '',
           displayName: itemInfo.value.displayName,
-          path: itemInfo.value.path,
+          path: itemInfo.value.path || '',
         };
       }
 
@@ -195,6 +167,35 @@ export class LayoutComparisonService {
     // Get the first resource access context
     const firstResource = this.applicationContext.resourceAccess[0];
     return firstResource?.context?.preview || null;
+  }
+
+  /**
+   * Normalize layout JSON to ensure consistent structure for comparison
+   * Extracts only the sitecore.route object for focused comparison
+   */
+  private normalizeLayoutJson(input: string | any): string {
+    try {
+      let parsed;
+      
+      // Handle both string and object inputs
+      if (typeof input === 'string') {
+        parsed = JSON.parse(input);
+      } else if (typeof input === 'object' && input !== null) {
+        parsed = input;
+      } else {
+        return String(input);
+      }
+      
+      // Extract only the sitecore.route object for comparison
+      if (parsed.sitecore?.route) {
+        return JSON.stringify(parsed.sitecore.route, null, 2);
+      }
+      
+      // Fallback: if no sitecore.route found, return the whole object
+      return JSON.stringify(parsed, null, 2);
+    } catch (error) {
+      return typeof input === 'string' ? input : JSON.stringify(input, null, 2);
+    }
   }
 
   /**

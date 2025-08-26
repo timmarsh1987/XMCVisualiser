@@ -1,5 +1,5 @@
 import { ClientSDK } from "@sitecore-marketplace-sdk/client";
-import { LayoutData } from "./AuthoringService";
+import { LayoutData, GraphQLResponse, LayoutResponse, ItemResponse, SchemaResponse } from "./types";
 
 export class ExperienceEdgeService {
   private client: ClientSDK;
@@ -39,9 +39,11 @@ export class ExperienceEdgeService {
         },
       });
 
-      if (data?.data?.layout?.item?.rendered) {
+      const response = data as GraphQLResponse<LayoutResponse>;
+      
+      if (response?.data?.layout?.item?.rendered) {
         return {
-          rendered: data.data.layout.item.rendered,
+          rendered: response.data.layout.item.rendered,
         };
       }
 
@@ -87,7 +89,8 @@ export class ExperienceEdgeService {
         },
       });
 
-      return data?.data?.item || null;
+      const response = data as GraphQLResponse<ItemResponse>;
+      return response?.data?.item || null;
     } catch (error) {
       return null;
     }
@@ -98,7 +101,7 @@ export class ExperienceEdgeService {
    */
   async testConnection(): Promise<boolean> {
     try {
-      await this.client.mutate("xmc.live.graphql", {
+      const { data } = await this.client.mutate("xmc.live.graphql", {
         params: {
           query: {
             sitecoreContextId: this.liveContextId,
@@ -117,7 +120,8 @@ export class ExperienceEdgeService {
         },
       });
 
-      return true;
+      const response = data as GraphQLResponse<SchemaResponse>;
+      return !!response?.data?.__schema?.queryType?.name;
     } catch (error) {
       return false;
     }

@@ -17,5 +17,6 @@
     "jsx": "react-jsx"
   },
   "include": ["src", "global.d.ts"],
+  "exclude": ["src/app/services/reference/**/*"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

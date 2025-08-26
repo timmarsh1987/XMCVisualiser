@@ -1,10 +1,6 @@
 // PreviewService for fetching layout data from Sitecore preview environment
 import { ClientSDK } from "@sitecore-marketplace-sdk/client";
-
-export interface LayoutData {
-  rendered?: string;
-  error?: string;
-}
+import { LayoutData, GraphQLResponse, LayoutResponse, ItemResponse } from "./types";
 
 export class PreviewService {
   constructor(private client: ClientSDK) {}
@@ -38,9 +34,11 @@ export class PreviewService {
         },
       });
 
-      if (data?.data?.layout?.item?.rendered) {
+      const response = data as GraphQLResponse<LayoutResponse>;
+      
+      if (response?.data?.layout?.item?.rendered) {
         return {
-          rendered: data.data.layout.item.rendered,
+          rendered: response.data.layout.item.rendered,
         };
       }
 
@@ -88,7 +86,8 @@ export class PreviewService {
         },
       });
 
-      return data?.data?.layout?.item || null;
+      const response = data as GraphQLResponse<LayoutResponse>;
+      return response?.data?.layout?.item || null;
     } catch (error) {
       return null;
     }
